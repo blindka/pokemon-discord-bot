@@ -79,7 +79,7 @@ python bot.py
 pokemon-discord-bot/
 ├── bot.py               # נקודת כניסה
 ├── config.py            # הגדרות
-├── .env                 # טוקן (אל תשתף!)
+├── .env                
 ├── requirements.txt
 ├── data/
 │   └── pokemon_data.json  # 151 פוקימונים
