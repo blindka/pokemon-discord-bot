@@ -13,8 +13,15 @@ BOT_VERSION = "1.0.0"
 
 # ===== GAME ECONOMY =====
 STARTING_SILVER = 1000
-BATTLE_SILVER_REWARD_MIN = 50
-BATTLE_SILVER_REWARD_MAX = 250
+
+# Silver reward per rarity tier when defeating a wild Pokémon
+SILVER_REWARDS = {
+    "common":    (1, 3),
+    "uncommon":  (2, 5),
+    "rare":      (3, 7),
+    "very_rare": (5, 12),
+    "legendary": (100, 500),
+}
 
 # ===== STORE PRICES =====
 STORE_ITEMS = {

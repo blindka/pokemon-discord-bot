@@ -859,7 +859,7 @@
       "id": 35,
       "name": "Clefairy",
       "type": [
-        "Normal"
+        "Fairy"
       ],
       "hp": 70,
       "attack": 45,
@@ -884,7 +884,7 @@
       "id": 36,
       "name": "Clefable",
       "type": [
-        "Normal"
+        "Fairy"
       ],
       "hp": 95,
       "attack": 70,
@@ -1395,7 +1395,7 @@
       "id": 56,
       "name": "Mankey",
       "type": [
-        "Water"
+        "Fighting"
       ],
       "hp": 40,
       "attack": 50,
@@ -1420,7 +1420,7 @@
       "id": 57,
       "name": "Primeape",
       "type": [
-        "Water"
+        "Fighting"
       ],
       "hp": 65,
       "attack": 65,
@@ -1445,8 +1445,7 @@
       "id": 58,
       "name": "Growlithe",
       "type": [
-        "Water",
-        "Fighting"
+        "Fire"
       ],
       "hp": 90,
       "attack": 95,
@@ -1471,7 +1470,7 @@
       "id": 59,
       "name": "Arcanine",
       "type": [
-        "Psychic"
+        "Fire"
       ],
       "hp": 25,
       "attack": 20,
@@ -1496,7 +1495,7 @@
       "id": 60,
       "name": "Poliwag",
       "type": [
-        "Psychic"
+        "Water"
       ],
       "hp": 40,
       "attack": 35,
@@ -1521,7 +1520,7 @@
       "id": 61,
       "name": "Poliwhirl",
       "type": [
-        "Psychic"
+        "Water"
       ],
       "hp": 55,
       "attack": 50,
@@ -1546,6 +1545,7 @@
       "id": 62,
       "name": "Poliwrath",
       "type": [
+        "Water",
         "Fighting"
       ],
       "hp": 70,
@@ -1571,7 +1571,7 @@
       "id": 63,
       "name": "Abra",
       "type": [
-        "Fighting"
+        "Psychic"
       ],
       "hp": 80,
       "attack": 100,
@@ -1596,7 +1596,7 @@
       "id": 64,
       "name": "Kadabra",
       "type": [
-        "Fighting"
+        "Psychic"
       ],
       "hp": 90,
       "attack": 130,
@@ -1621,8 +1621,7 @@
       "id": 65,
       "name": "Alakazam",
       "type": [
-        "Grass",
-        "Poison"
+        "Psychic"
       ],
       "hp": 50,
       "attack": 75,
@@ -1647,8 +1646,7 @@
       "id": 66,
       "name": "Machop",
       "type": [
-        "Grass",
-        "Poison"
+        "Fighting"
       ],
       "hp": 65,
       "attack": 90,
@@ -1673,8 +1671,7 @@
       "id": 67,
       "name": "Machoke",
       "type": [
-        "Grass",
-        "Poison"
+        "Fighting"
       ],
       "hp": 80,
       "attack": 105,
@@ -1699,8 +1696,7 @@
       "id": 68,
       "name": "Machamp",
       "type": [
-        "Water",
-        "Poison"
+        "Fighting"
       ],
       "hp": 40,
       "attack": 40,
@@ -1725,7 +1721,7 @@
       "id": 69,
       "name": "Bellsprout",
       "type": [
-        "Water",
+        "Grass",
         "Poison"
       ],
       "hp": 80,
@@ -1751,8 +1747,8 @@
       "id": 70,
       "name": "Weepinbell",
       "type": [
-        "Rock",
-        "Ground"
+        "Grass",
+        "Poison"
       ],
       "hp": 40,
       "attack": 80,
@@ -1777,8 +1773,8 @@
       "id": 71,
       "name": "Victreebel",
       "type": [
-        "Rock",
-        "Ground"
+        "Grass",
+        "Poison"
       ],
       "hp": 55,
       "attack": 95,
@@ -1803,8 +1799,8 @@
       "id": 72,
       "name": "Tentacool",
       "type": [
-        "Rock",
-        "Ground"
+        "Water",
+        "Poison"
       ],
       "hp": 80,
       "attack": 110,
@@ -1829,7 +1825,8 @@
       "id": 73,
       "name": "Tentacruel",
       "type": [
-        "Fire"
+        "Water",
+        "Poison"
       ],
       "hp": 50,
       "attack": 85,
@@ -1854,7 +1851,8 @@
       "id": 74,
       "name": "Geodude",
       "type": [
-        "Fire"
+        "Rock",
+        "Ground"
       ],
       "hp": 65,
       "attack": 100,
@@ -1879,8 +1877,8 @@
       "id": 75,
       "name": "Graveler",
       "type": [
-        "Water",
-        "Psychic"
+        "Rock",
+        "Ground"
       ],
       "hp": 90,
       "attack": 65,
@@ -1905,8 +1903,8 @@
       "id": 76,
       "name": "Golem",
       "type": [
-        "Water",
-        "Psychic"
+        "Rock",
+        "Ground"
       ],
       "hp": 95,
       "attack": 75,
@@ -1931,8 +1929,7 @@
       "id": 77,
       "name": "Ponyta",
       "type": [
-        "Electric",
-        "Steel"
+        "Fire"
       ],
       "hp": 25,
       "attack": 35,
@@ -1957,8 +1954,7 @@
       "id": 78,
       "name": "Rapidash",
       "type": [
-        "Electric",
-        "Steel"
+        "Fire"
       ],
       "hp": 50,
       "attack": 60,
@@ -1983,8 +1979,8 @@
       "id": 79,
       "name": "Slowpoke",
       "type": [
-        "Normal",
-        "Flying"
+        "Water",
+        "Psychic"
       ],
       "hp": 52,
       "attack": 65,
@@ -2009,8 +2005,8 @@
       "id": 80,
       "name": "Slowbro",
       "type": [
-        "Normal",
-        "Flying"
+        "Water",
+        "Psychic"
       ],
       "hp": 35,
       "attack": 85,
@@ -2035,7 +2031,8 @@
       "id": 81,
       "name": "Magnemite",
       "type": [
-        "Water"
+        "Electric",
+        "Steel"
       ],
       "hp": 65,
       "attack": 40,
@@ -2060,8 +2057,8 @@
       "id": 82,
       "name": "Magneton",
       "type": [
-        "Water",
-        "Ice"
+        "Electric",
+        "Steel"
       ],
       "hp": 90,
       "attack": 70,
@@ -2086,7 +2083,8 @@
       "id": 83,
       "name": "Farfetchd",
       "type": [
-        "Poison"
+        "Normal",
+        "Flying"
       ],
       "hp": 80,
       "attack": 80,
@@ -2111,7 +2109,8 @@
       "id": 84,
       "name": "Doduo",
       "type": [
-        "Poison"
+        "Normal",
+        "Flying"
       ],
       "hp": 105,
       "attack": 105,
@@ -2136,7 +2135,8 @@
       "id": 85,
       "name": "Dodrio",
       "type": [
-        "Water"
+        "Normal",
+        "Flying"
       ],
       "hp": 30,
       "attack": 65,
@@ -2161,8 +2161,7 @@
       "id": 86,
       "name": "Seel",
       "type": [
-        "Water",
-        "Ice"
+        "Water"
       ],
       "hp": 50,
       "attack": 95,
@@ -2187,8 +2186,8 @@
       "id": 87,
       "name": "Dewgong",
       "type": [
-        "Ghost",
-        "Poison"
+        "Water",
+        "Ice"
       ],
       "hp": 30,
       "attack": 35,
@@ -2213,7 +2212,6 @@
       "id": 88,
       "name": "Grimer",
       "type": [
-        "Ghost",
         "Poison"
       ],
       "hp": 45,
@@ -2239,7 +2237,6 @@
       "id": 89,
       "name": "Muk",
       "type": [
-        "Ghost",
         "Poison"
       ],
       "hp": 60,
@@ -2265,8 +2262,7 @@
       "id": 90,
       "name": "Shellder",
       "type": [
-        "Rock",
-        "Ground"
+        "Water"
       ],
       "hp": 35,
       "attack": 45,
@@ -2291,7 +2287,8 @@
       "id": 91,
       "name": "Cloyster",
       "type": [
-        "Psychic"
+        "Water",
+        "Ice"
       ],
       "hp": 60,
       "attack": 48,
@@ -2316,7 +2313,8 @@
       "id": 92,
       "name": "Gastly",
       "type": [
-        "Psychic"
+        "Ghost",
+        "Poison"
       ],
       "hp": 85,
       "attack": 73,
@@ -2341,7 +2339,8 @@
       "id": 93,
       "name": "Haunter",
       "type": [
-        "Water"
+        "Ghost",
+        "Poison"
       ],
       "hp": 30,
       "attack": 105,
@@ -2366,7 +2365,8 @@
       "id": 94,
       "name": "Gengar",
       "type": [
-        "Water"
+        "Ghost",
+        "Poison"
       ],
       "hp": 55,
       "attack": 130,
@@ -2391,7 +2391,8 @@
       "id": 95,
       "name": "Onix",
       "type": [
-        "Electric"
+        "Rock",
+        "Ground"
       ],
       "hp": 40,
       "attack": 30,
@@ -2416,7 +2417,7 @@
       "id": 96,
       "name": "Drowzee",
       "type": [
-        "Electric"
+        "Psychic"
       ],
       "hp": 60,
       "attack": 50,
@@ -2441,7 +2442,6 @@
       "id": 97,
       "name": "Hypno",
       "type": [
-        "Grass",
         "Psychic"
       ],
       "hp": 60,
@@ -2467,8 +2467,7 @@
       "id": 98,
       "name": "Krabby",
       "type": [
-        "Grass",
-        "Psychic"
+        "Water"
       ],
       "hp": 95,
       "attack": 95,
@@ -2493,7 +2492,7 @@
       "id": 99,
       "name": "Kingler",
       "type": [
-        "Ground"
+        "Water"
       ],
       "hp": 50,
       "attack": 50,
@@ -2518,7 +2517,7 @@
       "id": 100,
       "name": "Voltorb",
       "type": [
-        "Ground"
+        "Electric"
       ],
       "hp": 60,
       "attack": 80,

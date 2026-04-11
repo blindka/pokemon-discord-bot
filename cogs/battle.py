@@ -1,5 +1,5 @@
 """
-cogs/battle.py — מערכת קרבות מלאה עם חלון מתמשך (edit-in-place)
+cogs/battle.py — מערכת קרבות מלאה עם Discord UI Buttons (instant interaction)
 """
 import discord
 from discord.ext import commands
@@ -9,7 +9,7 @@ import random
 from database import db
 from utils.pokemon_utils import (
     get_pokemon_by_id, get_wild_pokemon_for_zone,
-    build_hp_bar, get_sprite_url, calculate_catch_rate
+    build_hp_bar, get_sprite_url, calculate_catch_rate, get_rarity
 )
 from utils.battle_utils import (
     calculate_damage, calculate_wild_damage,
@@ -18,10 +18,190 @@ from utils.battle_utils import (
 from utils.embed_utils import build_battle_moves_embed, build_catch_embed
 from config import (
     BATTLE_TIMEOUT, NUMBER_EMOJIS,
-    BATTLE_SILVER_REWARD_MIN, BATTLE_SILVER_REWARD_MAX,
+    SILVER_REWARDS,
     STORE_ITEMS
 )
 
+
+# ─────────────────────────────────────────────────────────────
+# UI VIEWS
+# ─────────────────────────────────────────────────────────────
+
+class BattleView(discord.ui.View):
+    """
+    כפתורי פעולה בקרב.
+    כל הכפתורים מוצגים בו-זמנית עם ה-embed — ללא המתנה.
+    """
+    def __init__(self, author_id: int, moves: list, timeout: float = 60.0):
+        super().__init__(timeout=timeout)
+        self.author_id = author_id
+        self.action_index: int | None = None
+        self._moves = moves
+
+        num_moves = min(len(moves), 4)
+
+        # Move buttons (row 0 + 1)
+        for i, move_name in enumerate(moves[:4]):
+            info = get_move_info(move_name)
+            label = f"{info['emoji']} {move_name}"
+            btn = discord.ui.Button(
+                label=label[:80],
+                style=discord.ButtonStyle.primary,
+                custom_id=f"move_{i}",
+                row=i // 2,          # row 0 = moves 0&1, row 1 = moves 2&3
+            )
+            btn.callback = self._make_callback(i)
+            self.add_item(btn)
+
+        # Utility buttons (row 2)
+        inv_btn = discord.ui.Button(label="🎒 תיק חפצים", style=discord.ButtonStyle.secondary,
+                                    custom_id="inv", row=2)
+        inv_btn.callback = self._make_callback(num_moves)
+        self.add_item(inv_btn)
+
+        sw_btn = discord.ui.Button(label="🔄 החלף", style=discord.ButtonStyle.secondary,
+                                   custom_id="sw", row=2)
+        sw_btn.callback = self._make_callback(num_moves + 1)
+        self.add_item(sw_btn)
+
+        run_btn = discord.ui.Button(label="🏃 ברח", style=discord.ButtonStyle.danger,
+                                    custom_id="run", row=2)
+        run_btn.callback = self._make_callback(num_moves + 2)
+        self.add_item(run_btn)
+
+    def _make_callback(self, index: int):
+        async def callback(interaction: discord.Interaction):
+            if interaction.user.id != self.author_id:
+                await interaction.response.send_message("זה לא הקרב שלך!", ephemeral=True)
+                return
+            self.action_index = index
+            await interaction.response.defer()
+            self.stop()
+        return callback
+
+
+class SwitchView(discord.ui.View):
+    """כפתורי בחירת פוקימון להחלפה"""
+    def __init__(self, author_id: int, entries: list, include_cancel: bool = True):
+        super().__init__(timeout=30.0)
+        self.author_id = author_id
+        self.chosen_index: int | None = None
+        self._entries = entries
+
+        for i, entry in enumerate(entries[:6]):
+            poke = get_pokemon_by_id(entry["pokemon_id"])
+            if not poke:
+                continue
+            hp_pct = int((entry["current_hp"] / entry["max_hp"]) * 100)
+            label = f"{poke['name']} Lv.{entry['level']} ({hp_pct}% HP)"
+            btn = discord.ui.Button(
+                label=label[:80],
+                style=discord.ButtonStyle.success,
+                custom_id=f"sw_{i}",
+                row=i // 3,
+            )
+            btn.callback = self._make_callback(i)
+            self.add_item(btn)
+
+        if include_cancel:
+            cancel = discord.ui.Button(label="❌ ביטול", style=discord.ButtonStyle.danger,
+                                       custom_id="cancel", row=2)
+            cancel.callback = self._cancel_callback
+            self.add_item(cancel)
+
+    def _make_callback(self, index: int):
+        async def callback(interaction: discord.Interaction):
+            if interaction.user.id != self.author_id:
+                await interaction.response.send_message("זה לא הקרב שלך!", ephemeral=True)
+                return
+            self.chosen_index = index
+            await interaction.response.defer()
+            self.stop()
+        return callback
+
+    async def _cancel_callback(self, interaction: discord.Interaction):
+        if interaction.user.id != self.author_id:
+            await interaction.response.send_message("זה לא הקרב שלך!", ephemeral=True)
+            return
+        self.chosen_index = None
+        await interaction.response.defer()
+        self.stop()
+
+
+class InventoryView(discord.ui.View):
+    """כפתורי בחירת פריט מהמלאי"""
+    def __init__(self, author_id: int, items: list):
+        super().__init__(timeout=30.0)
+        self.author_id = author_id
+        self.chosen_index: int | None = None
+        self._items = items
+
+        for i, item in enumerate(items[:9]):
+            info = STORE_ITEMS.get(item["item_name"], {})
+            emoji = info.get("emoji", "📦")
+            label = f"{emoji} {item['item_name']} ×{item['quantity']}"
+            btn = discord.ui.Button(
+                label=label[:80],
+                style=discord.ButtonStyle.primary,
+                custom_id=f"item_{i}",
+                row=i // 3,
+            )
+            btn.callback = self._make_callback(i)
+            self.add_item(btn)
+
+        cancel = discord.ui.Button(label="❌ ביטול", style=discord.ButtonStyle.danger,
+                                   custom_id="cancel", row=3)
+        cancel.callback = self._cancel_callback
+        self.add_item(cancel)
+
+    def _make_callback(self, index: int):
+        async def callback(interaction: discord.Interaction):
+            if interaction.user.id != self.author_id:
+                await interaction.response.send_message("זה לא הקרב שלך!", ephemeral=True)
+                return
+            self.chosen_index = index
+            await interaction.response.defer()
+            self.stop()
+        return callback
+
+    async def _cancel_callback(self, interaction: discord.Interaction):
+        if interaction.user.id != self.author_id:
+            await interaction.response.send_message("זה לא הקרב שלך!", ephemeral=True)
+            return
+        self.chosen_index = None
+        await interaction.response.defer()
+        self.stop()
+
+
+class EvolutionView(discord.ui.View):
+    """כפתורי אישור/ביטול התפתחות"""
+    def __init__(self, author_id: int):
+        super().__init__(timeout=60)
+        self.author_id = author_id
+        self.confirmed: bool | None = None
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.author_id:
+            await interaction.response.send_message("זה לא הקרב שלך!", ephemeral=True)
+            return False
+        return True
+
+    @discord.ui.button(label="✅ Evolve!", style=discord.ButtonStyle.success)
+    async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.confirmed = True
+        await interaction.response.defer()
+        self.stop()
+
+    @discord.ui.button(label="❌ Keep", style=discord.ButtonStyle.secondary)
+    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.confirmed = False
+        await interaction.response.defer()
+        self.stop()
+
+
+# ─────────────────────────────────────────────────────────────
+# BATTLE COG
+# ─────────────────────────────────────────────────────────────
 
 class BattleCog(commands.Cog, name="Battle"):
     def __init__(self, bot):
@@ -63,7 +243,6 @@ class BattleCog(commands.Cog, name="Battle"):
             await ctx.send("❌ שגיאה בטעינת פוקימונים.")
             return
 
-        # פוקימון פראי בהתאם לאזור ורמת השחקן
         zone = await db.get_zone(discord_id)
         wild = get_wild_pokemon_for_zone(zone, player_entry.get("level", 5))
 
@@ -90,48 +269,36 @@ class BattleCog(commands.Cog, name="Battle"):
         player_pokemon: dict, player_entry: dict,
         wild: dict, battle_log: list, turn: int
     ):
-        """לולאת הקרב — חלון מתמשך (edit-in-place)"""
-        battle_msg = None  # ההודעה הקבועה שנערוך בכל תור
+        """לולאת הקרב — כפתורים מופיעים מיד עם ה-embed"""
+        battle_msg = None
 
         while True:
             moves = player_pokemon.get("moves", [])
             num_moves = min(len(moves), 4)
 
-            # בניית Embed + ריאקציות
-            embed, emojis = build_battle_moves_embed(
+            embed, _ = build_battle_moves_embed(
                 player_pokemon, wild, player_entry, battle_log, turn
             )
 
+            # Build button view — sent WITH the embed, appear instantly
+            view = BattleView(ctx.author.id, moves, timeout=float(BATTLE_TIMEOUT))
+
             if battle_msg is None:
-                # תור ראשון — שלח הודעה חדשה
-                battle_msg = await ctx.send(embed=embed)
+                battle_msg = await ctx.send(embed=embed, view=view)
             else:
-                # תורים הבאים — ערוך את אותה הודעה
-                await battle_msg.edit(embed=embed)
-                try:
-                    await battle_msg.clear_reactions()
-                except Exception:
-                    pass
+                await battle_msg.edit(embed=embed, view=view)
 
-            # ריאקציות במקביל
-            await asyncio.gather(*[battle_msg.add_reaction(e) for e in emojis])
+            # Wait for button press
+            await view.wait()
 
-            def check(reaction, user_reacted):
-                return (
-                    user_reacted.id == ctx.author.id
-                    and str(reaction.emoji) in emojis
-                    and reaction.message.id == battle_msg.id
-                )
-
+            # Disable buttons immediately after interaction
             try:
-                reaction, _ = await self.bot.wait_for(
-                    "reaction_add", timeout=BATTLE_TIMEOUT, check=check
-                )
-            except asyncio.TimeoutError:
-                try:
-                    await battle_msg.clear_reactions()
-                except Exception:
-                    pass
+                await battle_msg.edit(view=None)
+            except Exception:
+                pass
+
+            if view.action_index is None:
+                # Timeout
                 await ctx.send(embed=discord.Embed(
                     title="⏰ פג הזמן!",
                     description=f"הקרב נגד {wild['name']} הסתיים.",
@@ -139,16 +306,9 @@ class BattleCog(commands.Cog, name="Battle"):
                 ))
                 return
 
-            # הסר רק את הריאקציה של המשתמש (מהיר יותר מ-clear_reactions)
-            try:
-                await battle_msg.remove_reaction(reaction.emoji, ctx.author)
-            except Exception:
-                pass
+            action_index = view.action_index
 
-            chosen_emoji = str(reaction.emoji)
-            action_index = emojis.index(chosen_emoji)
-
-            # --- MOVE (0 עד num_moves-1) ---
+            # --- MOVE ---
             if action_index < num_moves:
                 move_name = moves[action_index]
                 move_info = get_move_info(move_name)
@@ -168,24 +328,19 @@ class BattleCog(commands.Cog, name="Battle"):
                         f"**{damage}** נזק{crit_text}!"
                     )
 
-                # ניצחון?
                 if wild["current_hp"] <= 0:
-                    await self._handle_victory(
-                        ctx, discord_id, player_entry, wild, battle_msg
-                    )
+                    await self._handle_victory(ctx, discord_id, player_entry, wild, battle_msg)
                     return
 
-                # תור הפראי
                 await self._wild_attack(ctx, discord_id, player_pokemon, player_entry, wild, battle_log)
 
-                # הפסד?
                 if player_entry["current_hp"] <= 0:
                     switched = await self._handle_faint(ctx, discord_id, wild, player_pokemon, battle_log)
                     if switched is None:
                         return
                     player_pokemon, player_entry = switched
 
-            # --- מלאי (action_index == num_moves) ---
+            # --- מלאי ---
             elif action_index == num_moves:
                 inv = await db.get_inventory(discord_id)
                 usable = [i for i in inv if i["item_name"] in
@@ -193,16 +348,12 @@ class BattleCog(commands.Cog, name="Battle"):
                            "Potion", "Super Potion", "Hyper Potion"]]
 
                 if not usable:
-                    battle_log.append("🎒 המלאי ריק!")
+                    battle_log.append("🎒 תיק החפצים ריק!")
                 else:
                     item_result = await self._show_inventory_menu(
                         ctx, discord_id, usable, wild, player_pokemon, player_entry, battle_log
                     )
                     if item_result == "caught":
-                        try:
-                            await battle_msg.clear_reactions()
-                        except Exception:
-                            pass
                         return
                     elif item_result == "used_potion":
                         team = await db.get_team(discord_id)
@@ -211,13 +362,12 @@ class BattleCog(commands.Cog, name="Battle"):
                                 player_entry = t
                                 break
 
-            # --- החלפת פוקימון (action_index == num_moves+1) ---
+            # --- החלפת פוקימון ---
             elif action_index == num_moves + 1:
                 switched = await self._show_switch_menu(ctx, discord_id, player_entry, battle_log)
                 if switched:
                     player_pokemon, player_entry = switched
                     battle_log.append(f"🔄 קדימה, **{player_pokemon['name']}**!")
-                    # עולה בתור — הפראי תוקף
                     await self._wild_attack(ctx, discord_id, player_pokemon, player_entry, wild, battle_log)
                     if player_entry["current_hp"] <= 0:
                         sw = await self._handle_faint(ctx, discord_id, wild, player_pokemon, battle_log)
@@ -227,13 +377,9 @@ class BattleCog(commands.Cog, name="Battle"):
                 else:
                     battle_log.append("❌ ביטלת את ההחלפה.")
 
-            # --- ברח (action_index == num_moves+2) ---
+            # --- ברח ---
             elif action_index == num_moves + 2:
                 if random.random() < 0.5:
-                    try:
-                        await battle_msg.clear_reactions()
-                    except Exception:
-                        pass
                     await ctx.send(embed=discord.Embed(
                         title="🏃 ברחת!",
                         description=f"ברחת מהקרב נגד **{wild['name']}**.",
@@ -252,12 +398,12 @@ class BattleCog(commands.Cog, name="Battle"):
             turn += 1
 
     async def _handle_victory(self, ctx, discord_id, player_entry, wild, battle_msg):
-        """טיפול בניצחון — XP, כסף, Level Up, אבולוציה"""
-        silver_reward = random.randint(BATTLE_SILVER_REWARD_MIN, BATTLE_SILVER_REWARD_MAX)
+        """Victory — rarity-based silver, XP, level up, evolution prompt"""
+        rarity = get_rarity(wild["id"])
+        min_s, max_s = SILVER_REWARDS.get(rarity, (1, 3))
+        silver_reward = random.randint(min_s, max_s)
         await db.update_silver(discord_id, silver_reward)
 
-        # XP via Gen-1 formula: (base_exp * wild_level) / 7
-        # baseExp is sourced from PokéAPI (official data)
         base_exp = wild.get("baseExp", 100)
         wild_level = wild.get("level", 5)
         xp_gained = max(int(base_exp * wild_level / 7), 10)
@@ -266,8 +412,11 @@ class BattleCog(commands.Cog, name="Battle"):
             discord_id, player_entry["slot"], xp_gained
         )
 
+        rarity_emoji = {"common": "⚪", "uncommon": "🟢", "rare": "🔵",
+                        "very_rare": "🟣", "legendary": "🟡"}.get(rarity, "⚪")
         desc = (
             f"✅ **{wild['name']}** הובס!\n"
+            f"{rarity_emoji} *{rarity.replace('_', ' ').title()}*\n"
             f"💰 **{silver_reward} Silver**\n"
             f"⭐ **{xp_gained} XP**"
         )
@@ -275,29 +424,52 @@ class BattleCog(commands.Cog, name="Battle"):
         if xp_result["leveled_up"]:
             desc += f"\n\n🎉 **Level Up! רמה {xp_result['new_level']}!**"
 
-        if xp_result["evolved_to"]:
-            new_poke = get_pokemon_by_id(xp_result["evolved_to"])
+        victory_embed = discord.Embed(title="🏆 ניצחת!", description=desc, color=0x00FF00)
+        victory_embed.set_thumbnail(url=get_sprite_url(wild["id"]))
+        await ctx.send(embed=victory_embed)
+
+        # --- Evolution prompt ---
+        if xp_result.get("can_evolve") and xp_result.get("would_evolve_to"):
             old_poke = get_pokemon_by_id(xp_result["old_pokemon_id"])
+            new_poke = get_pokemon_by_id(xp_result["would_evolve_to"])
             old_name = old_poke["name"] if old_poke else "?"
             new_name = new_poke["name"] if new_poke else "?"
-            desc += f"\n\n✨🌟 **{old_name} מתפתח ל-{new_name}!!** 🌟✨"
 
-        victory_embed = discord.Embed(
-            title=f"🏆 ניצחת!",
-            description=desc,
-            color=0x00FF00
-        )
-        victory_embed.set_thumbnail(url=get_sprite_url(wild["id"]))
-        if xp_result.get("evolved_to"):
-            new_poke = get_pokemon_by_id(xp_result["evolved_to"])
+            evo_embed = discord.Embed(
+                title=f"✨ {old_name} רוצה להתפתח!",
+                description=(
+                    f"**{old_name}** הגיע לרמה להתפתח ל-**{new_name}**!\n"
+                    f"האם אתה רוצה להתפתח עכשיו?"
+                ),
+                color=0xFFD700
+            )
+            if old_poke:
+                evo_embed.set_thumbnail(url=get_sprite_url(old_poke["id"]))
             if new_poke:
-                victory_embed.set_image(url=get_sprite_url(new_poke["id"]))
+                evo_embed.set_image(url=get_sprite_url(new_poke["id"]))
 
-        try:
-            await battle_msg.clear_reactions()
-        except Exception:
-            pass
-        await ctx.send(embed=victory_embed)
+            view = EvolutionView(ctx.author.id)
+            evo_msg = await ctx.send(embed=evo_embed, view=view)
+            await view.wait()
+
+            try:
+                await evo_msg.edit(view=None)
+            except Exception:
+                pass
+
+            if view.confirmed:
+                await db.apply_evolution(
+                    discord_id, player_entry["slot"], xp_result["would_evolve_to"]
+                )
+                confirm_embed = discord.Embed(
+                    title=f"🌟✨ {old_name} התפתח ל-{new_name}!",
+                    color=0xFFD700
+                )
+                if new_poke:
+                    confirm_embed.set_image(url=get_sprite_url(new_poke["id"]))
+                await ctx.send(embed=confirm_embed)
+            else:
+                await ctx.send(f"🚫 {old_name} לא התפתח. אפשר להתפתח אחרכך!")
 
     async def _wild_attack(self, ctx, discord_id, player_pokemon, player_entry, wild, battle_log):
         """תקיפה של הפוקימון הפראי"""
@@ -319,7 +491,6 @@ class BattleCog(commands.Cog, name="Battle"):
 
     async def _handle_faint(self, ctx, discord_id, wild, fainted_pokemon, battle_log):
         """כשפוקימון נופל — הצעת החלפה"""
-        await db.update_team_pokemon_hp(discord_id, -1, 0)  # placeholder
         team = await db.get_team(discord_id)
         alive = [t for t in team if t["current_hp"] > 0]
 
@@ -339,7 +510,7 @@ class BattleCog(commands.Cog, name="Battle"):
         return await self._show_switch_menu_forced(ctx, discord_id, alive, battle_log)
 
     async def _show_switch_menu(self, ctx, discord_id, current_entry, battle_log):
-        """תפריט החלפת פוקימון מרצון (עולה תור)"""
+        """תפריט החלפת פוקימון מרצון"""
         team = await db.get_team(discord_id)
         alive = [t for t in team if t["current_hp"] > 0 and t["slot"] != current_entry["slot"]]
 
@@ -350,65 +521,36 @@ class BattleCog(commands.Cog, name="Battle"):
         return await self._show_switch_menu_forced(ctx, discord_id, alive, battle_log)
 
     async def _show_switch_menu_forced(self, ctx, discord_id, alive, battle_log):
-        """תפריט בחירת פוקימון (משותף לכפויה ומרצון)"""
+        """תפריט בחירת פוקימון — כפתורים"""
         embed = discord.Embed(
             title="🔄 בחר פוקימון!",
             description="בחר פוקימון חי מהשישייה:",
             color=0xFFA500
         )
-
-        emojis = []
         entries_to_show = alive[:6]
-        for i, entry in enumerate(entries_to_show):
+        for entry in entries_to_show:
             poke = get_pokemon_by_id(entry["pokemon_id"])
             if poke:
-                emoji = NUMBER_EMOJIS[i]
                 hp_pct = int((entry["current_hp"] / entry["max_hp"]) * 100)
                 embed.add_field(
-                    name=f"{emoji} {poke['name']} Lv.{entry['level']}",
+                    name=f"{poke['name']} Lv.{entry['level']}",
                     value=f"❤️ {entry['current_hp']}/{entry['max_hp']} ({hp_pct}%)",
                     inline=True
                 )
-                emojis.append(emoji)
 
-        # ביטול (רק אם מרצון — כלומר אם יש יותר מ-0 חיים)
-        cancel_emoji = "❌"
-        emojis.append(cancel_emoji)
-        embed.set_footer(text="❌ = ביטול")
-
-        msg = await ctx.send(embed=embed)
-        await asyncio.gather(*[msg.add_reaction(e) for e in emojis])
-
-        def check(r, u):
-            return (
-                u.id == ctx.author.id
-                and str(r.emoji) in emojis
-                and r.message.id == msg.id
-            )
+        view = SwitchView(ctx.author.id, entries_to_show)
+        msg = await ctx.send(embed=embed, view=view)
+        await view.wait()
 
         try:
-            reaction, _ = await self.bot.wait_for("reaction_add", timeout=30.0, check=check)
-        except asyncio.TimeoutError:
-            try:
-                await msg.delete()
-            except Exception:
-                pass
-            return None
-
-        try:
-            await msg.delete()
+            await msg.edit(view=None)
         except Exception:
             pass
 
-        chosen = str(reaction.emoji)
-        if chosen == cancel_emoji:
+        if view.chosen_index is None:
             return None
 
-        idx = emojis.index(chosen)
-        if idx >= len(entries_to_show):
-            return None
-
-        new_entry = entries_to_show[idx]
+        new_entry = entries_to_show[view.chosen_index]
         new_pokemon = get_pokemon_by_id(new_entry["pokemon_id"])
         return new_pokemon, new_entry
 
@@ -416,51 +558,30 @@ class BattleCog(commands.Cog, name="Battle"):
         self, ctx, discord_id: str, usable: list,
         wild: dict, player_pokemon: dict, player_entry: dict, battle_log: list
     ) -> str:
-        """תפריט מלאי בתוך הקרב"""
+        """תפריט מלאי — כפתורים"""
         embed = discord.Embed(title="🎒 בחר פריט", color=0x8B4513)
-        emojis = []
         items_to_show = usable[:9]
+        for item in items_to_show:
+            info = STORE_ITEMS.get(item["item_name"], {})
+            embed.add_field(
+                name=f"{info.get('emoji','📦')} {item['item_name']}",
+                value=f"כמות: ×{item['quantity']}",
+                inline=True
+            )
 
-        item_text = ""
-        for i, item in enumerate(items_to_show):
-            emoji = NUMBER_EMOJIS[i]
-            item_text += f"{emoji} **{item['item_name']}** × {item['quantity']}\n"
-            emojis.append(emoji)
-
-        cancel_emoji = "❌"
-        item_text += f"{cancel_emoji} **ביטול**"
-        emojis.append(cancel_emoji)
-
-        embed.add_field(name="פריטים:", value=item_text)
-        msg = await ctx.send(embed=embed)
-        await asyncio.gather(*[msg.add_reaction(e) for e in emojis])
-
-        def check(r, u):
-            return u.id == ctx.author.id and str(r.emoji) in emojis and r.message.id == msg.id
+        view = InventoryView(ctx.author.id, items_to_show)
+        msg = await ctx.send(embed=embed, view=view)
+        await view.wait()
 
         try:
-            reaction, _ = await self.bot.wait_for("reaction_add", timeout=30.0, check=check)
-        except asyncio.TimeoutError:
-            try:
-                await msg.delete()
-            except Exception:
-                pass
-            return "cancelled"
-
-        try:
-            await msg.delete()
+            await msg.edit(view=None)
         except Exception:
             pass
-        chosen = str(reaction.emoji)
 
-        if chosen == cancel_emoji:
+        if view.chosen_index is None:
             return "cancelled"
 
-        idx = emojis.index(chosen)
-        if idx >= len(items_to_show):
-            return "cancelled"
-
-        selected = items_to_show[idx]
+        selected = items_to_show[view.chosen_index]
         item_name = selected["item_name"]
         item_info = STORE_ITEMS.get(item_name, {})
 

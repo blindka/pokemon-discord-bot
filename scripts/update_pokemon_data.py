@@ -3,6 +3,7 @@ scripts/update_pokemon_data.py
 One-time script to enrich pokemon_data.json with real data from PokéAPI:
   - baseExp (base_experience) — used for XP calculation
   - catchRate (capture_rate) — original Gen-1 catch rate (0-255 scale)
+  - type — accurate current types from PokeAPI (replaces wrong manual data)
   - Removes: expToNextLevel (unused field)
 """
 
@@ -51,13 +52,17 @@ def main():
         name = poke["name"]
         print(f"[{i+1}/{total}] #{pid} {name} ...", end=" ", flush=True)
 
-        # --- base_experience from /pokemon endpoint ---
+        # --- base_experience + types from /pokemon endpoint ---
         try:
             p_data = fetch_json(API_BASE.format(id=pid))
             base_exp = p_data.get("base_experience") or 100
+            # Types: [{"slot":1,"type":{"name":"fire",...}}, ...]
+            raw_types = p_data.get("types", [])
+            types = [t["type"]["name"].capitalize() for t in sorted(raw_types, key=lambda x: x["slot"])]
         except Exception as e:
-            print(f"WARN: pokemon API failed ({e}), using default baseExp=100")
+            print(f"WARN: pokemon API failed ({e}), using defaults")
             base_exp = 100
+            types = poke.get("type", ["Normal"])
 
         # --- capture_rate from /pokemon-species endpoint ---
         try:
@@ -70,11 +75,12 @@ def main():
         # Update fields
         poke["baseExp"]   = base_exp
         poke["catchRate"] = catch_rate
+        poke["type"]      = types   # overwrite with accurate API types
 
         # Remove unused field
         poke.pop("expToNextLevel", None)
 
-        print(f"baseExp={base_exp}, catchRate={catch_rate}")
+        print(f"type={types}, baseExp={base_exp}, catchRate={catch_rate}")
 
         # Be polite to the API — avoid rate limiting
         time.sleep(0.3)

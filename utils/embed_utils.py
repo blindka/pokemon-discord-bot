@@ -120,7 +120,7 @@ def build_battle_embed(
             inline=False
         )
 
-    embed.set_footer(text=f"תור {turn} | בחר מהלך בעזרת ריאקציות 👇")
+    embed.set_footer(text=f"תור {turn} | בחר פעולה בעזרת הכפתורים 👇")
     return embed
 
 

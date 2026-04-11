@@ -342,8 +342,9 @@ async def give_exp_and_check_levelup(
     discord_id: str, slot: int, exp_gained: int
 ) -> dict:
     """
-    מעניק XP לפוקימון ובודק Level Up ואבולוציה.
-    מחזיר dict עם: leveled_up, new_level, evolved_to, old_pokemon_id
+    מעניק XP לפוקימון ובודק Level Up בלבד.
+    אינו מבצע אבולוציה אוטומטית — מחזיר can_evolve + would_evolve_to
+    כדי שהקרב ישאל את השחקן.
     """
     from config import EVOLUTION_TABLE
 
@@ -355,15 +356,16 @@ async def give_exp_and_check_levelup(
         ) as cur:
             row = await cur.fetchone()
             if not row:
-                return {"leveled_up": False, "new_level": 1, "evolved_to": None, "old_pokemon_id": 0}
+                return {"leveled_up": False, "new_level": 1, "can_evolve": False,
+                        "would_evolve_to": None, "old_pokemon_id": 0}
             entry = dict(row)
 
         cur_exp = (entry.get("exp") or 0) + exp_gained
         cur_level = entry.get("level") or 5
         leveled_up = False
-        evolved_to = None
+        can_evolve = False
+        would_evolve_to = None
         old_pid = entry["pokemon_id"]
-        cur_pid = old_pid
 
         # Level-Up loop (can gain multiple levels at once)
         while cur_exp >= _exp_to_next(cur_level):
@@ -371,22 +373,34 @@ async def give_exp_and_check_levelup(
             cur_level += 1
             leveled_up = True
 
-            # Check evolution for the current pokemon_id
-            evo = EVOLUTION_TABLE.get(cur_pid)
+            # Check evolution eligibility (but do NOT apply it yet)
+            evo = EVOLUTION_TABLE.get(old_pid)
             if evo and evo[0] is not None and cur_level >= evo[1]:
-                evolved_to = evo[0]
-                cur_pid = evolved_to  # track for chain evolutions
+                can_evolve = True
+                would_evolve_to = evo[0]
 
+        # Save XP + level, but keep pokemon_id unchanged (evolution is optional)
         await db.execute(
-            """UPDATE team SET exp = ?, level = ?, pokemon_id = ?
+            """UPDATE team SET exp = ?, level = ?
                WHERE discord_id = ? AND slot = ?""",
-            (cur_exp, cur_level, cur_pid, discord_id, slot)
+            (cur_exp, cur_level, discord_id, slot)
         )
         await db.commit()
 
         return {
             "leveled_up": leveled_up,
             "new_level": cur_level,
-            "evolved_to": evolved_to,
+            "can_evolve": can_evolve,
+            "would_evolve_to": would_evolve_to,
             "old_pokemon_id": old_pid,
         }
+
+
+async def apply_evolution(discord_id: str, slot: int, new_pokemon_id: int):
+    """Applies evolution to a team Pokémon after user confirmation."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE team SET pokemon_id = ? WHERE discord_id = ? AND slot = ?",
+            (new_pokemon_id, discord_id, slot)
+        )
+        await db.commit()
