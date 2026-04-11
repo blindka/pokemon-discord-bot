@@ -33,7 +33,7 @@ class PokemonBot(commands.Bot):
         super().__init__(
             command_prefix=PREFIX,
             intents=intents,
-            help_command=None,  # Custom help
+            help_command=None,
             case_insensitive=True,
         )
 
@@ -51,6 +51,8 @@ class PokemonBot(commands.Bot):
             "cogs.store",
             "cogs.inventory",
             "cogs.healing",
+            "cogs.explore",
+            "cogs.pvp",
         ]
 
         for cog in cogs:
@@ -73,7 +75,7 @@ class PokemonBot(commands.Bot):
     async def on_command_error(self, ctx: commands.Context, error):
         """טיפול גלובלי בשגיאות פקודות"""
         if isinstance(error, commands.CommandNotFound):
-            return  # התעלם מפקודות לא קיימות
+            return
         elif isinstance(error, commands.MissingRequiredArgument):
             await ctx.send(
                 embed=discord.Embed(
@@ -117,51 +119,65 @@ async def help_command(ctx: commands.Context):
 
     embed.add_field(
         name="🌟 התחלה",
+        value="`!start` — התחל את המשחק ובחר פוקימון ראשוני\n",
+        inline=False
+    )
+    embed.add_field(
+        name="⚔️ קרב פראי",
         value=(
-            "`!start` — התחל את המשחק ובחר פוקימון ראשוני\n"
+            "`!battle` — קרב פוקימון פראי (לפי אזור!)\n"
+            "◦ 1️⃣-4️⃣ בחר מהלך\n"
+            "◦ 5️⃣ 🎒 מלאי | 6️⃣ 🔄 **החלף** (עולה תור!) | 7️⃣ 🏃 ברח\n"
+            "◦ אם פוקימון נופל — בחר אחר מהשישייה\n"
         ),
         inline=False
     )
     embed.add_field(
-        name="⚔️ קרב",
+        name="👥 קרב PvP",
         value=(
-            "`!battle` — התחל קרב עם פוקימון פראי אקראי\n"
-            "◦ בחר מהלכים עם ריאקציות 1️⃣2️⃣3️⃣4️⃣\n"
-            "◦ 5️⃣ פתח מלאי (להשתמש בפריט/לתפוס)\n"
-            "◦ 6️⃣ ברח מהקרב\n"
+            "`!duel @שחקן` (או `!d`, `!challenge`) — אתגר שחקן אחר!\n"
+            "◦ היריב מאשר עם ✅ או דוחה עם ❌\n"
+            "◦ שני הצדדים בוחרים מהלך → מי שמהיר תוקף ראשון\n"
         ),
         inline=False
     )
     embed.add_field(
-        name="👤 פרופיל ושישייה",
+        name="🗺️ מפה ואזורים / נדירות",
         value=(
-            "`!profile` — ראה סטטיסטיקות וצוות\n"
-            "`!team` — ראה את השישייה המפורטת\n"
-            "`!storage` — ראה את אחסון הפוקימונים\n"
-            "`!pokedex <שם>` — מידע על פוקימון\n"
+            "`!explore` — בחר אזור (70% פוקימונים מהאזור)\n"
+            "🌊 ים · 🌿 יער · ⛰️ הרים · 🏙️ עיר · 🕳️ מערה · 🌾 שדה\n"
+            "**נדירות בטבע:** ⚪ נפוץ (60%) | 🟢 נדיר יחסית (25%) | 🔵 נדיר (12%) | 🟡 אגדי (3%)\n"
+        ),
+        inline=False
+    )
+    embed.add_field(
+        name="⭐ XP ואבולוציה",
+        value=(
+            "• XP לפי נוסחת Gen 1: `(power × level) / 7`\n"
+            "• עלייה ברמה → **אבולוציה אוטומטית!** ✨\n"
+            "• פוקימונים פראיים מאוזנים לרמה שלך (-2 עד +5)\n"
+        ),
+        inline=False
+    )
+    embed.add_field(
+        name="👤 פרופיל",
+        value=(
+            "`!profile` · `!team` · `!storage` · `!pokedex <שם>`\n"
         ),
         inline=False
     )
     embed.add_field(
         name="🏪 חנות ומלאי",
         value=(
-            "`!store` — פתח את החנות\n"
-            "`!buy <פריט>` — קנה פריט (למשל: `!buy Potion`)\n"
-            "`!inventory` — ראה את המלאי שלך\n"
-            "`!use <פריט>` — השתמש בתרופה\n"
+            "`!store` · `!buy <פריט>` · `!inventory` · `!use <פריט>`\n"
         ),
         inline=False
     )
     embed.add_field(
-        name="🏥 מרכז רפואה",
-        value="`!heal` — רפא את כל הפוקימונים (חינם!)\n",
-        inline=False
-    )
-    embed.add_field(
-        name="💰 כלכלה",
+        name="🏥 רפואה + 💰 כלכלה",
         value=(
-            "• נצח בקרבות → **10-100 Silver**\n"
-            "• תפוס פוקימונים → **מוסיף לפוקידקס**\n"
+            "`!heal` — רפא את כל הצוות (חינם!)\n"
+            "• ניצחון = **Silver** + **XP** | תפוס פוקימונים = **פוקידקס**\n"
         ),
         inline=False
     )

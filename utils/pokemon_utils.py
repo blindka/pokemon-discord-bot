@@ -15,6 +15,77 @@ with open(_DATA_PATH, "r", encoding="utf-8") as f:
 _POKEMON_BY_ID = {p["id"]: p for p in _ALL_POKEMON}
 _POKEMON_BY_NAME = {p["name"].lower(): p for p in _ALL_POKEMON}
 
+# ===== RARITY SYSTEM =====
+# Encounter rates use a 1-in-N probability model.
+# The weight stored is 1/N so that random.choices works correctly.
+
+# Legendary / Mythical — 1 in 2048
+_LEGENDARY_IDS = {144, 145, 146, 150, 151}  # Articuno, Zapdos, Moltres, Mewtwo, Mew
+
+# Very Rare — 1 in 256 (starter families, normally unobtainable in the wild)
+_VERY_RARE_IDS = {1, 2, 3, 4, 5, 6, 7, 8, 9}
+
+# Rare — 1 in 32 (strong evolved / special Pokémon)
+_RARE_IDS = {
+    130, 131, 143,       # Gyarados, Lapras, Snorlax
+    149, 142, 139,       # Dragonite, Aerodactyl, Omastar
+    141, 134, 135, 136,  # Kabutops, Vaporeon, Jolteon, Flareon
+    65, 68, 76, 94,      # Alakazam, Machamp, Golem, Gengar
+    103, 112, 115,       # Exeggutor, Rhydon, Kangaskhan
+}
+
+# 1-in-N encounter probabilities
+_ENCOUNTER_RATES = {
+    "legendary": 1 / 2048,
+    "very_rare":  1 / 256,
+    "rare":       1 / 32,
+    "uncommon":   1 / 16,
+    "common":     1 / 8,
+}
+
+
+def get_rarity(pokemon_id: int) -> str:
+    """מחזיר רמת נדירות: common, uncommon, rare, very_rare, legendary"""
+    if pokemon_id in _LEGENDARY_IDS:
+        return "legendary"
+    if pokemon_id in _VERY_RARE_IDS:
+        return "very_rare"
+    if pokemon_id in _RARE_IDS:
+        return "rare"
+    poke = _POKEMON_BY_ID.get(pokemon_id)
+    if poke:
+        power = poke.get("power", 300)
+        if power >= 450:
+            return "rare"
+        elif power >= 380:
+            return "uncommon"
+    return "common"
+
+
+def get_rarity_emoji(pokemon_id: int) -> str:
+    r = get_rarity(pokemon_id)
+    return {
+        "common":    "⚪",
+        "uncommon":  "🟢",
+        "rare":      "🔵",
+        "very_rare": "🟣",
+        "legendary": "🟡",
+    }[r]
+
+
+def _weighted_pick(pokemon_ids: list) -> int:
+    """בוחר פוקימון לפי שיטת 1-in-N encounter rates"""
+    weighted = []
+    weights = []
+    for pid in pokemon_ids:
+        r = get_rarity(pid)
+        weighted.append(pid)
+        weights.append(_ENCOUNTER_RATES.get(r, 1 / 8))
+
+    if not weighted:
+        return random.choice(pokemon_ids)
+    return random.choices(weighted, weights=weights, k=1)[0]
+
 
 def get_pokemon_by_id(pokemon_id: int) -> Optional[dict]:
     return _POKEMON_BY_ID.get(pokemon_id)
@@ -29,14 +100,47 @@ def get_all_pokemon() -> List[dict]:
 
 
 def get_random_wild_pokemon(max_id: int = 151) -> Optional[dict]:
-    """מחזיר פוקימון פראי אקראי עם HP מלא"""
-    chosen = random.choice([p for p in _ALL_POKEMON if p["id"] <= max_id])
+    """מחזיר פוקימון פראי אקראי עם HP מלא, רמה 5-10"""
+    pool = [p["id"] for p in _ALL_POKEMON if p["id"] <= max_id]
+    pid = _weighted_pick(pool)
+    chosen = _POKEMON_BY_ID.get(pid) or random.choice(_ALL_POKEMON)
     return {
         **chosen,
         "current_hp": chosen["hp"],
         "max_hp": chosen["hp"],
-        "level": random.randint(3, 15),
+        "level": random.randint(5, 10),
     }
+
+
+def get_wild_pokemon_for_zone(zone: str, player_level: int = 5) -> Optional[dict]:
+    """
+    מחזיר פוקימון פראי בהתאם לאזור:
+    70% מהאזור הספציפי, 30% כל Gen 1
+    רמה: 5-10 קבוע (ללא קשר לרמת השחקן)
+    משתמש במערכת נדירות 1-in-N
+    """
+    from config import ZONES, DEFAULT_ZONE
+    zone_data = ZONES.get(zone, ZONES.get(DEFAULT_ZONE))
+    zone_ids = zone_data["pokemon"]
+
+    available_ids = [p["id"] for p in _ALL_POKEMON if p["id"] <= 151]
+    zone_valid = [pid for pid in zone_ids if pid in available_ids]
+
+    if zone_valid and random.random() < 0.70:
+        pid = _weighted_pick(zone_valid)
+    else:
+        pid = _weighted_pick(available_ids)
+
+    chosen = _POKEMON_BY_ID.get(pid) or random.choice(_ALL_POKEMON)
+
+    return {
+        **chosen,
+        "current_hp": chosen["hp"],
+        "max_hp": chosen["hp"],
+        "level": random.randint(5, 10),
+    }
+
+
 
 
 def get_sprite_url(pokemon_id: int) -> str:

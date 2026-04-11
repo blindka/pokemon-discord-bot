@@ -18,9 +18,16 @@ async def init_db():
                 pokemon_caught INTEGER DEFAULT 0,
                 pokedex_ids TEXT DEFAULT '[]',
                 starter_selected INTEGER DEFAULT 0,
+                current_zone TEXT DEFAULT 'grass',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        # Migration: add current_zone if column doesn't exist yet
+        try:
+            await db.execute("ALTER TABLE users ADD COLUMN current_zone TEXT DEFAULT 'grass'")
+        except Exception:
+            pass  # Column already exists
+
         await db.execute("""
             CREATE TABLE IF NOT EXISTS team (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -296,3 +303,90 @@ async def remove_item(discord_id: str, item_name: str, quantity: int = 1) -> boo
         )
         await db.commit()
         return True
+
+
+# ============================================================
+# ZONE
+# ============================================================
+
+async def get_zone(discord_id: str) -> str:
+    """מחזיר את האזור הנוכחי של השחקן"""
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT current_zone FROM users WHERE discord_id = ?", (discord_id,)
+        ) as cur:
+            row = await cur.fetchone()
+            return row[0] if row else "grass"
+
+
+async def set_zone(discord_id: str, zone: str):
+    """מגדיר את אזור הסיור של השחקן"""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE users SET current_zone = ? WHERE discord_id = ?",
+            (zone, discord_id)
+        )
+        await db.commit()
+
+
+# ============================================================
+# XP / LEVEL / EVOLUTION
+# ============================================================
+
+def _exp_to_next(level: int) -> int:
+    """XP הדרוש לרמה הבאה"""
+    return int(100 * (1.2 ** (level - 1)))
+
+
+async def give_exp_and_check_levelup(
+    discord_id: str, slot: int, exp_gained: int
+) -> dict:
+    """
+    מעניק XP לפוקימון ובודק Level Up ואבולוציה.
+    מחזיר dict עם: leveled_up, new_level, evolved_to, old_pokemon_id
+    """
+    from config import EVOLUTION_TABLE
+
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT * FROM team WHERE discord_id = ? AND slot = ?",
+            (discord_id, slot)
+        ) as cur:
+            row = await cur.fetchone()
+            if not row:
+                return {"leveled_up": False, "new_level": 1, "evolved_to": None, "old_pokemon_id": 0}
+            entry = dict(row)
+
+        cur_exp = (entry.get("exp") or 0) + exp_gained
+        cur_level = entry.get("level") or 5
+        leveled_up = False
+        evolved_to = None
+        old_pid = entry["pokemon_id"]
+        cur_pid = old_pid
+
+        # Level-Up loop (can gain multiple levels at once)
+        while cur_exp >= _exp_to_next(cur_level):
+            cur_exp -= _exp_to_next(cur_level)
+            cur_level += 1
+            leveled_up = True
+
+            # Check evolution for the current pokemon_id
+            evo = EVOLUTION_TABLE.get(cur_pid)
+            if evo and evo[0] is not None and cur_level >= evo[1]:
+                evolved_to = evo[0]
+                cur_pid = evolved_to  # track for chain evolutions
+
+        await db.execute(
+            """UPDATE team SET exp = ?, level = ?, pokemon_id = ?
+               WHERE discord_id = ? AND slot = ?""",
+            (cur_exp, cur_level, cur_pid, discord_id, slot)
+        )
+        await db.commit()
+
+        return {
+            "leveled_up": leveled_up,
+            "new_level": cur_level,
+            "evolved_to": evolved_to,
+            "old_pokemon_id": old_pid,
+        }

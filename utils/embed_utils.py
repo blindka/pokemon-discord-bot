@@ -96,9 +96,16 @@ def build_battle_embed(
     player_type_str = format_pokemon_types(types)
     level = player_team_entry.get("level", player_pokemon.get("level", 5))
 
+    # XP bar
+    cur_exp = player_team_entry.get("exp", 0) or 0
+    exp_to_next = int(100 * (1.2 ** (level - 1)))
+    xp_filled = round((cur_exp / exp_to_next) * 8) if exp_to_next > 0 else 0
+    xp_bar = "▰" * xp_filled + "▱" * (8 - xp_filled)
+    xp_str = f"⭐ `{xp_bar}` {cur_exp}/{exp_to_next} XP"
+
     embed.add_field(
         name=f"🏆 {player_pokemon['name']} שלך — רמה {level}",
-        value=f"{player_type_str}\n{player_hp_bar}",
+        value=f"{player_type_str}\n{player_hp_bar}\n{xp_str}",
         inline=False
     )
 
@@ -115,6 +122,8 @@ def build_battle_embed(
 
     embed.set_footer(text=f"תור {turn} | בחר מהלך בעזרת ריאקציות 👇")
     return embed
+
+
 
 
 def build_battle_moves_embed(player_pokemon: dict, wild_pokemon: dict,
@@ -138,11 +147,15 @@ def build_battle_moves_embed(player_pokemon: dict, wild_pokemon: dict,
         emojis.append(emoji)
 
     # Extra options
-    move_text += f"{NUMBER_EMOJIS[len(moves)]} 🎒 **פתח מלאי** (השתמש בפריט)\n"
-    emojis.append(NUMBER_EMOJIS[len(moves)])
+    idx = len(moves)
+    move_text += f"{NUMBER_EMOJIS[idx]} 🎒 **מלאי**\n"
+    emojis.append(NUMBER_EMOJIS[idx])
 
-    move_text += f"{NUMBER_EMOJIS[len(moves)+1]} 🏃 **ברח מהקרב**\n"
-    emojis.append(NUMBER_EMOJIS[len(moves)+1])
+    move_text += f"{NUMBER_EMOJIS[idx+1]} 🔄 **החלף פוקימון** (עולה תור!)\n"
+    emojis.append(NUMBER_EMOJIS[idx+1])
+
+    move_text += f"{NUMBER_EMOJIS[idx+2]} 🏃 **ברח**\n"
+    emojis.append(NUMBER_EMOJIS[idx+2])
 
     embed.add_field(name="🎯 בחר פעולה:", value=move_text, inline=False)
     return embed, emojis
