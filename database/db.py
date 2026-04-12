@@ -165,6 +165,26 @@ async def set_starter_selected(discord_id: str):
         await db.commit()
 
 
+async def reset_user(discord_id: str):
+    """מוחק את כל הנתונים של משתמש (איפוס מלא)"""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("DELETE FROM team WHERE discord_id = ?", (discord_id,))
+        await db.execute("DELETE FROM storage WHERE discord_id = ?", (discord_id,))
+        await db.execute("DELETE FROM inventory WHERE discord_id = ?", (discord_id,))
+        await db.execute("DELETE FROM users WHERE discord_id = ?", (discord_id,))
+        await db.commit()
+
+
+async def set_silver(discord_id: str, amount: int):
+    """מגדיר את Silver של שחקן לסכום מדויק"""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE users SET silver = ? WHERE discord_id = ?",
+            (max(0, amount), discord_id)
+        )
+        await db.commit()
+
+
 # ============================================================
 # TEAM
 # ============================================================

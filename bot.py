@@ -53,6 +53,7 @@ class PokemonBot(commands.Bot):
             "cogs.healing",
             "cogs.explore",
             "cogs.pvp",
+            "cogs.admin",
         ]
 
         for cog in cogs:
@@ -179,6 +180,12 @@ async def help_command(ctx: commands.Context):
             "`!heal` — רפא את כל הצוות (חינם!)\n"
             "• ניצחון = **Silver** + **XP** | תפוס פוקימונים = **פוקידקס**\n"
         ),
+        inline=False
+    )
+
+    embed.add_field(
+        name="🛡️ ניהול (Admin)",
+        value="`!adminhelp` — רשימת כל פקודות הניהול\n",
         inline=False
     )
 
