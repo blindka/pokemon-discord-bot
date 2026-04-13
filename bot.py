@@ -54,6 +54,7 @@ class PokemonBot(commands.Bot):
             "cogs.explore",
             "cogs.pvp",
             "cogs.admin",
+            "cogs.game_logger",
         ]
 
         for cog in cogs:
@@ -193,6 +194,61 @@ async def help_command(ctx: commands.Context):
     await ctx.send(embed=embed)
 
 
+# ===== SINGLE INSTANCE LOCK =====
+import sys
+import signal
+
+PID_FILE = "bot.pid"
+
+def _acquire_lock():
+    """
+    מונע הפעלת שני עותקים של הבוט במקביל.
+    אם יש כבר instance חי — הורג אותו לפני שמתחיל.
+    """
+    current_pid = os.getpid()
+
+    if os.path.exists(PID_FILE):
+        try:
+            with open(PID_FILE, "r") as f:
+                old_pid = int(f.read().strip())
+            if old_pid != current_pid:
+                import psutil
+                try:
+                    proc = psutil.Process(old_pid)
+                    proc.terminate()
+                    proc.wait(timeout=3)
+                    logger.warning(f"🛑 הרגנו instance ישן (PID {old_pid})")
+                except (psutil.NoSuchProcess, psutil.TimeoutExpired):
+                    pass  # כבר לא רץ
+                except ImportError:
+                    # psutil לא מותקן — ננסה דרך OS
+                    try:
+                        os.kill(old_pid, signal.SIGTERM)
+                        logger.warning(f"🛑 שלחנו SIGTERM ל-PID {old_pid}")
+                    except OSError:
+                        pass
+        except (ValueError, OSError):
+            pass
+
+    # כתוב את ה-PID הנוכחי
+    with open(PID_FILE, "w") as f:
+        f.write(str(current_pid))
+    logger.info(f"🔒 Instance lock acquired (PID {current_pid})")
+
+
+def _release_lock():
+    """מנקה את קובץ ה-PID עם סגירת הבוט"""
+    try:
+        if os.path.exists(PID_FILE):
+            with open(PID_FILE, "r") as f:
+                stored_pid = int(f.read().strip())
+            if stored_pid == os.getpid():
+                os.remove(PID_FILE)
+                logger.info("🔓 Instance lock released")
+    except Exception:
+        pass
+
+
 # ===== ENTRYPOINT =====
 async def main():
     if BOT_TOKEN == "YOUR_TOKEN_HERE":
@@ -204,4 +260,8 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    _acquire_lock()
+    try:
+        asyncio.run(main())
+    finally:
+        _release_lock()

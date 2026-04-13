@@ -21,6 +21,7 @@ from config import (
     SILVER_REWARDS,
     STORE_ITEMS
 )
+from utils.log_utils import send_log
 
 
 # ─────────────────────────────────────────────────────────────
@@ -428,6 +429,19 @@ class BattleCog(commands.Cog, name="Battle"):
         victory_embed.set_thumbnail(url=get_sprite_url(wild["id"]))
         await ctx.send(embed=victory_embed)
 
+        # ── Log ──
+        await send_log(
+            ctx.bot,
+            category="battle",
+            title="ניצחון בקרב פראי!",
+            fields=[
+                ("🐾 פוקימון", f"{wild['name']} Lv.{wild.get('level',5)} {rarity_emoji}", True),
+                ("💰 Silver", f"+{silver_reward}", True),
+                ("⭐ XP", f"+{xp_gained}", True),
+            ],
+            user=ctx.author,
+        )
+
         # --- Evolution prompt ---
         if xp_result.get("can_evolve") and xp_result.get("would_evolve_to"):
             old_poke = get_pokemon_by_id(xp_result["old_pokemon_id"])
@@ -604,6 +618,19 @@ class BattleCog(commands.Cog, name="Battle"):
                     await ctx.send(f"📦 הצוות מלא! **{wild['name']}** נשלח לאחסון.")
                 await db.increment_caught(discord_id)
                 await db.add_to_pokedex(discord_id, wild["id"])
+
+                # ── Log catch ──
+                rarity_c = get_rarity(wild["id"])
+                rarity_map = {"common": "⚪", "uncommon": "🟢", "rare": "🔵", "very_rare": "🟣", "legendary": "🟡"}
+                r_emoji = rarity_map.get(rarity_c, "⚪")
+                await send_log(
+                    ctx.bot,
+                    category="catch",
+                    title="פוקימון נתפס!",
+                    description=f"{r_emoji} **{wild['name']}** Lv.{wild.get('level',5)} נתפס בעזרת **{item_name}**",
+                    user=ctx.author,
+                )
+
                 return "caught"
             else:
                 battle_log.append(f"😤 {wild['name']} שחרר את עצמו!")

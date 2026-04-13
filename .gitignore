@@ -16,9 +16,12 @@ __pycache__/
 dist/
 build/
 
-# לוגים
+# לוגים רצים וגיבויים
 *.log
 bot.log
+*.pid
+bot.pid
+backups/
 
 # macOS
 .DS_Store

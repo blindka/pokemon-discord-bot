@@ -1,5 +1,5 @@
 """
-cogs/pvp.py — מערכת קרבות PvP בין שחקנים
+cogs/pvp.py — מערכת קרבות PvP בין שחקנים | Discord UI Buttons (instant)
 """
 import discord
 from discord.ext import commands
@@ -13,8 +13,85 @@ from utils.pokemon_utils import (
 from utils.battle_utils import (
     calculate_damage, is_critical_hit, get_move_info, format_battle_log
 )
-from config import NUMBER_EMOJIS, BATTLE_TIMEOUT
+from config import BATTLE_TIMEOUT
+from utils.log_utils import send_log
 
+
+# ─────────────────────────────────────────────────────────────
+# UI VIEWS
+# ─────────────────────────────────────────────────────────────
+
+class PvPInviteView(discord.ui.View):
+    """כפתורי קבלה/דחייה של אתגר PvP"""
+    def __init__(self, challenger: discord.Member, opponent: discord.Member):
+        super().__init__(timeout=60.0)
+        self.challenger = challenger
+        self.opponent = opponent
+        self.accepted: bool | None = None
+
+    @discord.ui.button(label="✅ קבל את האתגר!", style=discord.ButtonStyle.success)
+    async def accept(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.opponent.id:
+            await interaction.response.send_message("זה לא האתגר שלך!", ephemeral=True)
+            return
+        self.accepted = True
+        await interaction.response.defer()
+        self.stop()
+
+    @discord.ui.button(label="❌ דחה", style=discord.ButtonStyle.danger)
+    async def decline(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.opponent.id:
+            await interaction.response.send_message("זה לא האתגר שלך!", ephemeral=True)
+            return
+        self.accepted = False
+        await interaction.response.defer()
+        self.stop()
+
+
+class PvPMoveView(discord.ui.View):
+    """כפתורי בחירת מהלך ב-PvP"""
+    def __init__(self, player: discord.Member, moves: list, timeout: float = 60.0):
+        super().__init__(timeout=timeout)
+        self.player = player
+        self.chosen_move: str | None = None
+
+        MOVE_STYLES = [
+            discord.ButtonStyle.primary,
+            discord.ButtonStyle.primary,
+            discord.ButtonStyle.success,
+            discord.ButtonStyle.success,
+        ]
+
+        for i, move_name in enumerate(moves[:4]):
+            info = get_move_info(move_name)
+            power_str = f" ({info['power']})" if info.get("power", 0) > 0 else " (סטטוס)"
+            label = f"{info.get('emoji', '💥')} {move_name}{power_str}"
+            style = MOVE_STYLES[i] if i < len(MOVE_STYLES) else discord.ButtonStyle.secondary
+            btn = discord.ui.Button(
+                label=label[:80],
+                style=style,
+                custom_id=f"pvp_move_{i}",
+                row=i // 2,
+            )
+            btn.callback = self._make_callback(move_name)
+            self.add_item(btn)
+
+    def _make_callback(self, move_name: str):
+        async def callback(interaction: discord.Interaction):
+            if interaction.user.id != self.player.id:
+                await interaction.response.send_message(
+                    "זה לא התור שלך!", ephemeral=True
+                )
+                return
+            self.chosen_move = move_name
+            await interaction.response.defer()
+            self.stop()
+        return callback
+
+
+# ─────────────────────────────────────────────────────────────
+# COG
+# ─────────────────────────────────────────────────────────────
 
 class PvPCog(commands.Cog, name="PvP"):
     def __init__(self, bot):
@@ -57,38 +134,32 @@ class PvPCog(commands.Cog, name="PvP"):
             await ctx.send("⚔️ אחד מכם כבר באתגר פעיל!")
             return
 
-        # שלח הזמנה
+        # שלח הזמנה עם כפתורים
         invite_embed = discord.Embed(
             title="⚔️ אתגר PvP!",
             description=(
                 f"**{ctx.author.display_name}** מאתגר את **{opponent.display_name}** לקרב!\n\n"
-                f"{opponent.mention}, לחץ ✅ לקבל או ❌ לדחות."
+                f"{opponent.mention}, לחץ על הכפתור לקבל או לדחות:"
             ),
             color=0xFF6600
         )
-        invite_msg = await ctx.send(embed=invite_embed)
-        await asyncio.gather(
-            invite_msg.add_reaction("✅"),
-            invite_msg.add_reaction("❌")
-        )
+        invite_embed.set_footer(text="האתגר יפוג בעוד 60 שניות")
 
-        def invite_check(r, u):
-            return (
-                u.id == opponent.id
-                and str(r.emoji) in ["✅", "❌"]
-                and r.message.id == invite_msg.id
-            )
+        invite_view = PvPInviteView(ctx.author, opponent)
+        invite_msg = await ctx.send(embed=invite_embed, view=invite_view)
+
+        await invite_view.wait()
 
         try:
-            reaction, _ = await self.bot.wait_for("reaction_add", timeout=60.0, check=invite_check)
-        except asyncio.TimeoutError:
-            await invite_msg.clear_reactions()
+            await invite_msg.edit(view=None)
+        except Exception:
+            pass
+
+        if invite_view.accepted is None:
             await ctx.send(f"⏰ {opponent.display_name} לא הגיב בזמן.")
             return
 
-        await invite_msg.clear_reactions()
-
-        if str(reaction.emoji) == "❌":
+        if not invite_view.accepted:
             await ctx.send(f"❌ {opponent.display_name} דחה את האתגר.")
             return
 
@@ -134,57 +205,57 @@ class PvPCog(commands.Cog, name="PvP"):
         p1_pokemon: dict, p1_entry: dict,
         p2_pokemon: dict, p2_entry: dict
     ):
-        """לולאת PvP — שני שחקנים בוחרים מהלכים לסירוגין"""
+        """לולאת PvP — כפתורים מיידיים לכל תור"""
         battle_log = [f"⚔️ **{user1.display_name}** vs **{user2.display_name}**!"]
         turn = 1
         pvp_msg = None
 
         while True:
-            # --- תור שחקן 1 ---
+            # ─── תור שחקן 1 ───
             p1_moves = p1_pokemon.get("moves", ["Tackle"])[:4]
             embed = self._build_pvp_embed(
                 user1, user2, p1_pokemon, p1_entry, p2_pokemon, p2_entry,
                 battle_log, turn, current_turn_user=user1, moves=p1_moves
             )
+            view1 = PvPMoveView(user1, p1_moves, timeout=float(BATTLE_TIMEOUT))
 
             if pvp_msg is None:
-                pvp_msg = await ctx.send(embed=embed)
+                pvp_msg = await ctx.send(embed=embed, view=view1)
             else:
-                await pvp_msg.edit(embed=embed)
-                try:
-                    await pvp_msg.clear_reactions()
-                except Exception:
-                    pass
+                await pvp_msg.edit(embed=embed, view=view1)
 
-            p1_move = await self._pick_move(ctx, pvp_msg, user1, p1_moves)
-            if p1_move is None:
-                await ctx.send(f"⏰ {user1.display_name} לא בחר מהלך — הפסיד!")
-                return
-
-            # --- תור שחקן 2 ---
+            await view1.wait()
             try:
-                await pvp_msg.clear_reactions()
+                await pvp_msg.edit(view=None)
             except Exception:
                 pass
 
+            if view1.chosen_move is None:
+                await ctx.send(f"⏰ {user1.display_name} לא בחר מהלך — הפסיד!")
+                return
+            p1_move = view1.chosen_move
+
+            # ─── תור שחקן 2 ───
             p2_moves = p2_pokemon.get("moves", ["Tackle"])[:4]
             embed2 = self._build_pvp_embed(
                 user1, user2, p1_pokemon, p1_entry, p2_pokemon, p2_entry,
                 battle_log, turn, current_turn_user=user2, moves=p2_moves
             )
-            await pvp_msg.edit(embed=embed2)
+            view2 = PvPMoveView(user2, p2_moves, timeout=float(BATTLE_TIMEOUT))
 
-            p2_move = await self._pick_move(ctx, pvp_msg, user2, p2_moves)
-            if p2_move is None:
-                await ctx.send(f"⏰ {user2.display_name} לא בחר מהלך — הפסיד!")
-                return
-
+            await pvp_msg.edit(embed=embed2, view=view2)
+            await view2.wait()
             try:
-                await pvp_msg.clear_reactions()
+                await pvp_msg.edit(view=None)
             except Exception:
                 pass
 
-            # --- חישוב: מי מהיר תוקף ראשון ---
+            if view2.chosen_move is None:
+                await ctx.send(f"⏰ {user2.display_name} לא בחר מהלך — הפסיד!")
+                return
+            p2_move = view2.chosen_move
+
+            # ─── חישוב: מי מהיר תוקף ראשון ───
             p1_speed = p1_pokemon.get("speed", 50)
             p2_speed = p2_pokemon.get("speed", 50)
             if p1_speed >= p2_speed:
@@ -198,7 +269,6 @@ class PvPCog(commands.Cog, name="PvP"):
                     (p1_pokemon, p1_entry, p1_move, p2_pokemon, p2_entry, user1, user2),
                 ]
 
-            # תקפות
             for atk_poke, atk_entry, move, def_poke, def_entry, atk_user, def_user in order:
                 self._resolve_attack(atk_poke, atk_entry, move, def_poke, def_entry, battle_log)
                 if def_entry["current_hp"] <= 0:
@@ -206,12 +276,27 @@ class PvPCog(commands.Cog, name="PvP"):
                         user1, user2, p1_pokemon, p1_entry, p2_pokemon, p2_entry,
                         battle_log, turn
                     )
-                    await pvp_msg.edit(embed=final_embed)
+                    await pvp_msg.edit(embed=final_embed, view=None)
                     await ctx.send(embed=discord.Embed(
                         title=f"🏆 {atk_user.display_name} ניצח!",
                         description=f"**{def_poke['name']}** של {def_user.display_name} חוסר הכרה!",
                         color=0x00FF00
                     ))
+
+                    # ── Log PvP ──
+                    await send_log(
+                        ctx.bot,
+                        category="pvp",
+                        title="קרב PvP הסתיים!",
+                        description=f"ניצחון: **{atk_user.display_name}** נגד **{def_user.display_name}**",
+                        fields=[
+                            ("🟥 מנצח", f"{atk_poke['name']} Lv.{atk_entry.get('level',5)}", True),
+                            ("🟦 פסדן", f"{def_poke['name']} Lv.{def_entry.get('level',5)}", True),
+                            ("🔄 תור", str(turn), True),
+                        ],
+                        user=atk_user,
+                    )
+
                     return
 
             turn += 1
@@ -235,22 +320,6 @@ class PvPCog(commands.Cog, name="PvP"):
             f"{atk_poke['name']} ← {emoji} **{move_name}** → **{damage}** נזק{crit_text}!"
         )
 
-    async def _pick_move(self, ctx, msg, user: discord.Member, moves: list):
-        """שחקן בוחר מהלך עם ריאקציות"""
-        emojis = [NUMBER_EMOJIS[i] for i in range(len(moves))]
-        await asyncio.gather(*[msg.add_reaction(e) for e in emojis])
-
-        def check(r, u):
-            return u.id == user.id and str(r.emoji) in emojis and r.message.id == msg.id
-
-        try:
-            reaction, _ = await self.bot.wait_for("reaction_add", timeout=BATTLE_TIMEOUT, check=check)
-        except asyncio.TimeoutError:
-            return None
-
-        idx = emojis.index(str(reaction.emoji))
-        return moves[idx]
-
     def _build_pvp_embed(
         self, user1, user2,
         p1_pokemon, p1_entry, p2_pokemon, p2_entry,
@@ -263,7 +332,6 @@ class PvPCog(commands.Cog, name="PvP"):
             color=0xFF6600
         )
 
-        # שחקן 1
         p1_hp_bar = build_hp_bar(p1_entry["current_hp"], p1_entry["max_hp"])
         p1_types = format_pokemon_types(p1_pokemon.get("type", ["Normal"]))
         embed.add_field(
@@ -274,7 +342,6 @@ class PvPCog(commands.Cog, name="PvP"):
 
         embed.add_field(name="⎯⎯⎯ VS ⎯⎯⎯", value="\u200b", inline=False)
 
-        # שחקן 2
         p2_hp_bar = build_hp_bar(p2_entry["current_hp"], p2_entry["max_hp"])
         p2_types = format_pokemon_types(p2_pokemon.get("type", ["Normal"]))
         embed.add_field(
@@ -283,20 +350,13 @@ class PvPCog(commands.Cog, name="PvP"):
             inline=False
         )
 
-        # רשימת מהלכים (אם זה תור של מישהו)
-        if current_turn_user and moves:
-            move_text = ""
-            for i, move_name in enumerate(moves):
-                info = get_move_info(move_name)
-                power_str = f"({info['power']})" if info.get("power", 0) > 0 else "(סטטוס)"
-                move_text += f"{NUMBER_EMOJIS[i]} {info.get('emoji', '💥')} **{move_name}** {power_str}\n"
+        if current_turn_user:
             embed.add_field(
-                name=f"🎯 תור {current_turn_user.display_name} — בחר מהלך:",
-                value=move_text,
+                name=f"🎯 תור {current_turn_user.display_name}",
+                value="בחר מהלך מהכפתורים למטה:",
                 inline=False
             )
 
-        # יומן
         if battle_log:
             log_text = format_battle_log(battle_log)
             if len(log_text) > 1024:

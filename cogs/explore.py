@@ -1,13 +1,66 @@
 """
-cogs/explore.py — מערכת אזורים וסיור
+cogs/explore.py — מערכת אזורים וסיור | Discord UI Buttons (instant)
 """
 import discord
 from discord.ext import commands
-import asyncio
 
 from database import db
-from config import ZONES, DEFAULT_ZONE, NUMBER_EMOJIS
+from config import ZONES, DEFAULT_ZONE
 
+
+# ─────────────────────────────────────────────────────────────
+# UI VIEW — בחירת אזור
+# ─────────────────────────────────────────────────────────────
+
+ZONE_STYLES = {
+    "ocean":    discord.ButtonStyle.primary,
+    "forest":   discord.ButtonStyle.success,
+    "mountain": discord.ButtonStyle.secondary,
+    "city":     discord.ButtonStyle.secondary,
+    "cave":     discord.ButtonStyle.danger,
+    "grass":    discord.ButtonStyle.success,
+}
+
+
+class ExploreView(discord.ui.View):
+    """כפתורי בחירת אזור — מוצגים מיידית"""
+    def __init__(self, author_id: int, zone_list: list, current_zone: str):
+        super().__init__(timeout=30.0)
+        self.author_id = author_id
+        self.chosen_key: str | None = None
+
+        for i, (zone_key, zone_data) in enumerate(zone_list):
+            is_current = zone_key == current_zone
+            label = zone_data["name"]
+            if is_current:
+                label += " ✓"
+            style = ZONE_STYLES.get(zone_key, discord.ButtonStyle.secondary)
+            btn = discord.ui.Button(
+                label=label[:80],
+                style=style,
+                custom_id=f"zone_{zone_key}",
+                row=i // 3,
+                disabled=is_current,  # נוכחי — מנוטרל להדגשה
+            )
+            btn.callback = self._make_callback(zone_key)
+            self.add_item(btn)
+
+    def _make_callback(self, zone_key: str):
+        async def callback(interaction: discord.Interaction):
+            if interaction.user.id != self.author_id:
+                await interaction.response.send_message(
+                    "זה לא הבחירה שלך!", ephemeral=True
+                )
+                return
+            self.chosen_key = zone_key
+            await interaction.response.defer()
+            self.stop()
+        return callback
+
+
+# ─────────────────────────────────────────────────────────────
+# COG
+# ─────────────────────────────────────────────────────────────
 
 class ExploreCog(commands.Cog, name="Explore"):
     def __init__(self, bot):
@@ -36,52 +89,42 @@ class ExploreCog(commands.Cog, name="Explore"):
             title="🗺️ בחר אזור סיור",
             description=(
                 f"**אזור נוכחי:** {ZONES.get(current_zone, {}).get('name', current_zone)}\n\n"
-                "בחר אזור חדש — כל אזור מחזיר סוגי פוקימונים שונים!\n"
-                "**70%** מפוקימוני האזור, **30%** אקראי."
+                "לחץ על אחד הכפתורים לשינוי האזור!\n"
+                "**70%** מפוקימוני האזור · **30%** אקראי"
             ),
             color=0x00AAFF
         )
 
-        emojis = []
-        for i, (zone_key, zone_data) in enumerate(zone_list):
-            emoji = NUMBER_EMOJIS[i]
+        for zone_key, zone_data in zone_list:
             is_current = "👈 **נוכחי**" if zone_key == current_zone else ""
             embed.add_field(
-                name=f"{emoji} {zone_data['name']} {is_current}",
+                name=f"{zone_data['name']} {is_current}",
                 value=_zone_description(zone_key),
                 inline=True
             )
-            emojis.append(emoji)
 
-        embed.set_footer(text="לחץ על ריאקציה לשינוי האזור")
-        msg = await ctx.send(embed=embed)
+        embed.set_footer(text="הכפתורים מופיעים למטה · פג תוקף בעוד 30 שניות")
 
-        # Add reactions in parallel
-        await asyncio.gather(*[msg.add_reaction(e) for e in emojis])
+        view = ExploreView(ctx.author.id, zone_list, current_zone)
+        msg = await ctx.send(embed=embed, view=view)
 
-        def check(r, u):
-            return (
-                u.id == ctx.author.id
-                and str(r.emoji) in emojis
-                and r.message.id == msg.id
-            )
+        await view.wait()
 
         try:
-            reaction, _ = await self.bot.wait_for("reaction_add", timeout=30.0, check=check)
-        except asyncio.TimeoutError:
-            await msg.clear_reactions()
-            return
+            await msg.edit(view=None)
+        except Exception:
+            pass
 
-        await msg.clear_reactions()
-        chosen_idx = emojis.index(str(reaction.emoji))
-        chosen_zone_key, chosen_zone_data = zone_list[chosen_idx]
+        if view.chosen_key is None:
+            return  # timeout — בשקט
 
-        await db.set_zone(discord_id, chosen_zone_key)
+        await db.set_zone(discord_id, view.chosen_key)
+        zone_data = ZONES[view.chosen_key]
 
         confirm_embed = discord.Embed(
-            title=f"✅ עברת ל{chosen_zone_data['name']}!",
+            title=f"✅ עברת ל{zone_data['name']}!",
             description=(
-                f"כעת הקרבות שלך יתרחשו ב**{chosen_zone_data['name']}**.\n"
+                f"כעת הקרבות שלך יתרחשו ב**{zone_data['name']}**.\n"
                 f"השתמש ב-`!battle` כדי להתחיל לחפש פוקימונים!"
             ),
             color=0x00FF00

@@ -10,6 +10,7 @@ load_dotenv()
 BOT_TOKEN = os.getenv("DISCORD_TOKEN", "YOUR_TOKEN_HERE")
 PREFIX = "!"
 BOT_VERSION = "1.0.0"
+LOG_CHANNEL_ID = int(os.getenv("LOG_CHANNEL_ID", "0"))
 
 # ===== GAME ECONOMY =====
 STARTING_SILVER = 1000

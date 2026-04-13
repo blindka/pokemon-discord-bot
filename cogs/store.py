@@ -8,6 +8,7 @@ import asyncio
 from database import db
 from utils.embed_utils import build_store_embed
 from config import STORE_ITEMS, NUMBER_EMOJIS
+from utils.log_utils import send_log
 
 
 class StoreCog(commands.Cog, name="Store"):
@@ -102,6 +103,16 @@ class StoreCog(commands.Cog, name="Store"):
             color=0x00C851
         )
         await ctx.send(embed=success_embed)
+
+        # ── Log ──
+        await send_log(
+            ctx.bot,
+            category="shop",
+            title="רכישה בחנות",
+            description=f"קנה {found_item['emoji']} **{found_key}** ב-**{found_item['price']} Silver**",
+            fields=[("💰 יתרה", f"{new_silver} Silver", True)],
+            user=ctx.author,
+        )
 
     async def _interactive_buy(self, ctx, discord_id: str, silver: int):
         """תפריט קניה אינטראקטיבי עם ריאקציות"""

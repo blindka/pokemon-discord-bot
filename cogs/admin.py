@@ -11,6 +11,7 @@ from database.db import (
     get_user, reset_user, get_silver, set_silver,
     add_item, get_team, get_storage
 )
+from utils.log_utils import send_log
 
 logger = logging.getLogger("PokémonBot.Admin")
 
@@ -53,7 +54,66 @@ class Admin(commands.Cog, name="Admin"):
             color=0xFF4444
         )
         await ctx.send(embed=embed)
+        await send_log(
+            self.bot, category="shutdown",
+            title="הבוט יורד (shutdown)",
+            description=f"פקודה דרך `!shutdown`", user=ctx.author
+        )
         logger.warning(f"🔴 Shutdown requested by {ctx.author} ({ctx.author.id})")
+        await self.bot.close()
+
+    @commands.command(name="backupshutdown", aliases=["bs", "backup"])
+    @commands.is_owner()
+    async def backup_shutdown(self, ctx: commands.Context):
+        """!backupshutdown — גיבוי DB + כיבוי הבוט (Owner only)"""
+        import shutil
+        from datetime import datetime
+        from config import DB_PATH
+
+        # ── גיבוי DB ──
+        os.makedirs("backups", exist_ok=True)
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        backup_path = f"backups/pokemon_bot_{timestamp}.db"
+
+        backup_ok = False
+        try:
+            shutil.copy2(DB_PATH, backup_path)
+            backup_ok = True
+            logger.info(f"💾 Backup saved: {backup_path}")
+        except Exception as e:
+            logger.error(f"❌ Backup failed: {e}")
+
+        # ── הודעה בצ'אט ──
+        if backup_ok:
+            embed = admin_embed(
+                "💾 גיבוי נשמר — הבוט יורד!",
+                (
+                    f"✅ גיבוי נשמר בהצלחה:\n`{backup_path}`\n\n"
+                    "🔴 הבוט מתנתק בעוד **3 שניות**..."
+                ),
+                color=0xFFA500
+            )
+        else:
+            embed = admin_embed(
+                "⚠️ גיבוי נכשל — הבוט יורד בכל זאת!",
+                "🔴 הבוט מתנתק בעוד **3 שניות**...",
+                color=0xFF4444
+            )
+        await ctx.send(embed=embed)
+
+        # ── Log ──
+        await send_log(
+            self.bot, category="shutdown",
+            title="Backup + Shutdown",
+            description=(
+                f"{'✅ גיבוי נשמר: `' + backup_path + '`' if backup_ok else '❌ גיבוי נכשל'}\n"
+                "הבוט יורד..."
+            ),
+            user=ctx.author,
+        )
+
+        import asyncio
+        await asyncio.sleep(3)
         await self.bot.close()
 
     @commands.command(name="reload", aliases=["rl"])
@@ -82,7 +142,7 @@ class Admin(commands.Cog, name="Admin"):
         cogs = [
             "cogs.starter", "cogs.battle", "cogs.profile",
             "cogs.store", "cogs.inventory", "cogs.healing",
-            "cogs.explore", "cogs.pvp", "cogs.admin"
+            "cogs.explore", "cogs.pvp", "cogs.admin", "cogs.game_logger"
         ]
         results = []
         for cog in cogs:
@@ -180,6 +240,11 @@ class Admin(commands.Cog, name="Admin"):
             f"✅ **{member.display_name}** אופס בהצלחה!\n"
             f"כל הנתונים נמחקו. השחקן יוכל להתחיל מחדש עם `!start`."
         ))
+        await send_log(
+            self.bot, category="admin", title="איפוס שחקן",
+            description=f"כל הנתונים של **{member.display_name}** נמחקו",
+            user=ctx.author,
+        )
         logger.warning(f"🗑️ User {member} ({member.id}) was reset by {ctx.author} ({ctx.author.id})")
 
     @commands.command(name="resetserver", aliases=["rs", "reset_server"])
@@ -241,6 +306,12 @@ class Admin(commands.Cog, name="Admin"):
             f"💰 נוספו **{amount:,} Silver** ל-{member.mention}\n"
             f"יתרה חדשה: **{new_balance:,} Silver**"
         ))
+        await send_log(
+            self.bot, category="admin", title="נתינת Silver",
+            description=f"נסף **+{amount:,} Silver** ל **{member.display_name}**",
+            fields=[("💰 יתרה חדשה", f"{new_balance:,}", True)],
+            user=ctx.author,
+        )
         logger.info(f"💰 Gave {amount} silver to {member} by {ctx.author}")
 
     @commands.command(name="takesilver", aliases=["removeilver", "deductsilver"])
@@ -347,7 +418,7 @@ class Admin(commands.Cog, name="Admin"):
 
     @commands.command(name="botinfo", aliases=["bi", "status"])
     @commands.has_permissions(administrator=True)
-    async def bot_info(self, ctx: commands.Context):
+    async def botinfo_cmd(self, ctx: commands.Context):
         """!botinfo — מידע על הבוט"""
         from config import BOT_VERSION
         embed = discord.Embed(
@@ -379,19 +450,20 @@ class Admin(commands.Cog, name="Admin"):
         embed.set_footer(text="🛡️ Admin Panel")
         await ctx.send(embed=embed)
 
-    @commands.command(name="adminhelp", aliases=["ah"])
+    @commands.command(name="adminhelp", aliases=["ah", "admin"])
     @commands.has_permissions(administrator=True)
     async def admin_help(self, ctx: commands.Context):
         """!adminhelp — רשימת פקודות ניהול"""
         embed = discord.Embed(
             title="🛡️ פקודות ניהול",
-            description="פקודות זמינות לאדמינים ובעלי הבוט",
+            description="פקודות זמינות לאדמינים ובעלי הבוט. השתמש ב-`!admin` או `!ah` להצגת תפריט זה.",
             color=0x00BFFF
         )
         embed.add_field(
             name="👑 Owner בלבד",
             value=(
                 "`!shutdown` / `!off` — כיבוי הבוט\n"
+                "`!backupshutdown` / `!bs` — גיבוי של ה-DB וכיבוי הבוט\n"
                 "`!reload <cog>` — טעינה מחדש של cog\n"
                 "`!reloadall` — טעינה מחדש של כל ה-cogs\n"
             ),
@@ -433,7 +505,7 @@ class Admin(commands.Cog, name="Admin"):
     @set_silver_cmd.error
     @give_item.error
     @user_info.error
-    @bot_info.error
+    @botinfo_cmd.error
     @admin_help.error
     @maintenance.error
     async def admin_error(self, ctx: commands.Context, error):

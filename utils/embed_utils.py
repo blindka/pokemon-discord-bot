@@ -190,6 +190,11 @@ def build_profile_embed(user: dict, team: list, pokemon_data_map: dict) -> disco
                     f"Lv.{entry['level']} — HP {entry['current_hp']}/{entry['max_hp']}\n"
                 )
         embed.add_field(name="🐾 שישייה", value=team_str or "ריק", inline=False)
+        
+        # Set the first Pokemon as the thumbnail
+        first_pokemon = pokemon_data_map.get(team[0]["pokemon_id"])
+        if first_pokemon:
+            embed.set_thumbnail(url=get_animated_sprite_url(first_pokemon["id"]) or get_sprite_url(first_pokemon["id"]))
     else:
         embed.add_field(name="🐾 שישייה", value="אין פוקימונים!", inline=False)
 
